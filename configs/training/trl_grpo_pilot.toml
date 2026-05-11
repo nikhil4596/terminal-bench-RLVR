@@ -1,0 +1,32 @@
+[backend]
+name = "trl"
+role = "single-node-or-small-cluster-pilot"
+selected_for_large_scale = false
+reason = "Fastest path to validate reward functions and GRPO hyperparameters before distributed training."
+
+[model]
+base_model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+dtype = "bfloat16"
+max_prompt_tokens = 8192
+max_completion_tokens = 2048
+
+[algorithm]
+name = "GRPO"
+num_generations_per_prompt = 8
+learning_rate = 0.000001
+kl_coefficient_start = 0.02
+max_grad_norm = 1.0
+temperature = 0.7
+top_p = 0.95
+
+[data]
+train_source = "harbor_rollout_jsonl"
+curriculum = "smoke_easy_medium_hard"
+holdout_fraction = 0.2
+
+[rewards]
+success_weight = 1.0
+progress_weight = 1.0
+integrity_weight = 1.0
+step_weight = 1.0
+token_weight = 1.0

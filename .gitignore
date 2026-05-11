@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Personal prep notes and source assignment material.
+research_notes/
+*.pdf

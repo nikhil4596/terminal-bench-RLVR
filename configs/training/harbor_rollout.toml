@@ -1,0 +1,23 @@
+[environment]
+benchmark = "terminal-bench@2.0"
+harness = "harbor"
+execution = "docker_or_remote_provider"
+max_steps_per_episode = 30
+max_wall_time_seconds = 3600
+n_concurrent_local = 4
+n_concurrent_cloud = 256
+
+[rollout]
+action_protocol = "single_action_xml"
+record_format = "jsonl"
+store_observation_prompt = true
+store_model_output = true
+store_reward_components = true
+store_terminal_reason = true
+redact_oracle_and_hidden_tests = true
+
+[safety]
+forbid_test_mutation = true
+forbid_oracle_access = true
+forbid_network_by_default = true
+terminate_on_integrity_violation = true
