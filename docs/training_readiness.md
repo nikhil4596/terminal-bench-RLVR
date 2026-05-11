@@ -1,287 +1,247 @@
 # Training Readiness Audit
 
-This document evaluates whether the repo can move from a no-training take-home
-submission into large-scale RL training without redesigning the environment.
+This document separates what is ready in this repo from what requires external
+resources. The key correction is that "no training run" does not mean "mock
+only." The repo should be ready to validate the task runtime and data contract,
+while honestly stopping before LLM policy rollouts and GRPO updates.
 
-## Decision Summary
+## Execution Boundary
 
-The repo is organized around three separate layers:
+Laptop-feasible without GPU or API keys:
+
+- run the unit test suite,
+- run the mock RLVR environment,
+- export trainer-neutral toy samples,
+- dry-run the exact Harbor oracle command,
+- run a real Harbor oracle smoke task if Docker and `uvx`/Harbor are installed,
+- inspect the data lifecycle and rollout schema.
+
+Not feasible without additional resources:
+
+- real LLM policy rollouts,
+- token logprob collection for a trainable model,
+- GRPO/PPO updates,
+- benchmark improvement claims,
+- distributed verl training.
+
+The deliverable boundary is therefore:
 
 ```text
-Terminal-Bench task execution
-  -> Harbor rollout environment
-  -> tb_rlvr action, observation, reward, safety, and rollout schema
-  -> trainer-neutral dataset export
-  -> TRL pilot or verl large-scale GRPO training
+Validate real Terminal-Bench runtime with Harbor oracle.
+Validate RLVR data contract with code/tests/mock rollout.
+Specify how online GRPO attaches.
+Do not pretend to run LLM rollout or training without model access/GPU.
 ```
 
-The core package is not built directly on TRL or verl. This is intentional.
-TRL and verl are training systems; they are not the source of truth for the
-terminal environment. Terminal-Bench 2.0 tasks, Docker state, hidden/public
-tests, timeouts, and oracle discipline belong in the environment layer.
+## Layered System
 
-## What Is Ready
+```text
+Terminal-Bench 2.0
+  = task suite: instructions, Docker envs, tests, oracle solutions
+
+Harbor
+  = task runtime/evaluator: launches tasks, runs agents/oracle, runs verifiers
+
+tb_rlvr
+  = RLVR contract: observations, actions, safety, rewards, rollout JSONL
+
+TRL
+  = future small-pilot optimizer: online GRPO when model/GPU are available
+
+verl
+  = future scale optimizer: distributed rollout/training infrastructure
+```
+
+Harbor is not a replacement for this repo's environment design. Harbor is the
+backend runtime. This repo defines the RL interface around that runtime.
+
+## Current Repo Readiness
 
 ### Environment Contract
 
-Ready.
+Status: ready for local validation.
 
-The repo defines the required abstractions:
+Implemented:
 
-- `AgentAction` for structured actions.
+- `AgentAction` for structured `bash`, `patch`, and `finish` actions.
 - `Observation` for prompt construction.
-- `MockTerminalBenchEnv` as a deterministic stand-in for the Harbor adapter.
 - `RewardComponents` for decomposed reward logging.
-- `RolloutRecord` for JSONL audit and trainer export.
-- Safety checks for protected paths and destructive commands.
+- `RolloutRecord` for audit and trainer handoff.
+- `MockTerminalBenchEnv` for fast unit tests.
+- `harbor.py` for Harbor oracle command construction and dry-run execution.
 
-The mock environment is not a substitute for Harbor. Its role is to make the
-interfaces executable and testable without Docker or network-dependent setup.
+The mock environment is not the proposed benchmark environment. It is a unit
+test fixture. Harbor is the real Terminal-Bench runtime.
+
+### Harbor Runtime
+
+Status: command path represented; execution depends on local Docker/uvx/Harbor.
+
+Dry-run:
+
+```bash
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert
+```
+
+Real oracle smoke, if dependencies are installed:
+
+```bash
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert --execute
+```
+
+Equivalent command:
+
+```bash
+uvx harbor run -d terminal-bench@2.0 -t openssl-selfsigned-cert -a oracle
+```
+
+Oracle means reference solution. It is not an LLM. This check validates the
+task Docker environment and verifier, not policy behavior.
 
 ### Reward Interface
 
-Ready for pilot training.
+Status: ready for schema validation.
 
-The reward schema supports:
+Implemented reward components:
 
 - final success reward,
 - bounded progress reward,
 - integrity/safety penalty,
-- step efficiency penalty,
+- step penalty,
 - token penalty.
 
-The important large-scale property is decomposition. A single scalar reward is
-available for GRPO/PPO, but component-level rewards are retained for diagnosing
-reward hacking, safety regressions, and curriculum failures.
+The scalar reward is suitable for trainer consumption, but component rewards
+are retained for diagnosis.
 
-### Rollout Format
+### Rollout And Handoff Format
 
-Ready for trainer handoff.
+Status: ready for audit, SFT/DPO-style conversion, and future online RL
+integration.
 
-Each rollout record stores:
+Each `RolloutRecord` stores:
 
 - task id,
-- step id,
-- observation prompt before the action,
-- model output/action text,
+- episode id,
+- backend,
+- step,
+- observation prompt,
+- model output,
 - parsed action,
-- scalar reward,
 - reward components,
-- done flag,
+- scalar reward,
 - terminal reason,
 - observation hashes,
-- backend metadata.
+- metadata.
 
-This is enough to produce prompt/completion/reward rows for TRL, verl, or a
-custom GRPO loop.
-
-### Configuration Skeleton
-
-Ready as a planning artifact.
-
-The repo includes:
-
-- `configs/training/harbor_rollout.toml`
-- `configs/training/trl_grpo_pilot.toml`
-- `configs/training/verl_grpo_large_scale.toml`
-
-These are not executable launch files yet. They pin the intended boundaries and
-make the remaining training work clear.
-
-### Tests
-
-Ready.
-
-The current local validation suite checks the environment contract and data
-flow. A real training launch would add integration tests that run one Harbor
-task end to end.
-
-## What Is Not Ready Locally
-
-### Harbor Runtime
-
-Not installed in the local package path.
-
-This is expected for the current repo state. The implementation provides the
-adapter boundary and mock; the real run image would install Harbor and execute
-Terminal-Bench tasks through it.
-
-Required next step:
+Important limitation:
 
 ```text
-Implement HarborTerminalBenchEnv behind the same reset/step interface.
+JSONL records alone are not enough for online GRPO unless they also include
+fresh policy samples and logprobs from the policy being updated.
 ```
 
-### TRL Runtime
+For online GRPO, TRL/verl must call the environment while sampling from the
+current model.
 
-Not installed in the core environment.
+### Trainer-Neutral Export
 
-Reason: TRL is useful for small-scale GRPO experiments but should not be a hard
-dependency of the environment package. Requiring TRL in core code would make
-local validation slower and couple environment correctness to a specific
-training implementation.
+Status: ready for toy export.
 
-Compromise:
+Command:
 
-- The repo cannot launch a TRL GRPO job today.
-- It can export training samples in the shape a TRL pipeline needs.
-- A future `trl_train.py` can consume those samples without changing the env.
+```bash
+python3 scripts/export_mock_samples.py
+```
 
-### verl Runtime
+This writes JSONL sample rows from the mock environment. It validates the data
+shape but does not represent real Terminal-Bench training data.
 
-Not installed in the core environment.
+### TRL
 
-Reason: verl is the right backend for large-scale RL, but it brings distributed
-training assumptions: GPU workers, inference engines, checkpoint stores, Ray or
-equivalent orchestration, and cluster-specific launch files.
+Status: future pilot backend.
 
-Compromise:
+TRL is not imported by core code. That is intentional because local validation
+does not require GPU training dependencies.
 
-- The repo cannot launch distributed GRPO today.
-- It already separates rollout collection from trainer execution, which is the
-  important architectural precondition for using verl later.
-- The large-scale config identifies the missing cluster resources.
+TRL becomes relevant when:
 
-### Distributed Infrastructure
+- a model policy is available,
+- rollouts can be sampled from that policy,
+- token logprobs can be computed,
+- rewards can be returned from the Harbor-backed environment,
+- GPU compute exists for the update.
 
-Not configured.
-
-Missing pieces:
-
-- GPU cluster allocation,
-- Ray or Slurm launcher,
-- Docker image with Harbor, model runtime, and trainer packages,
-- shared checkpoint storage,
-- rollout dataset storage,
-- experiment tracking.
-
-These are deployment decisions, not environment-design decisions.
-
-## Why Not Make TRL Or verl The Core Framework?
-
-The assignment asks for an RLVR environment. For Terminal-Bench 2.0, the hard
-part is not calling an optimizer. The hard part is constructing a reproducible,
-auditable terminal environment where a policy can:
-
-- observe task state,
-- emit terminal/file actions,
-- receive bounded feedback,
-- avoid test/oracle tampering,
-- terminate cleanly,
-- produce records that are trainable and debuggable.
-
-TRL and verl do not replace this layer. They consume it.
-
-### Capabilities Compromised By Not Using TRL In Core
-
-- No immediate `GRPOTrainer` script.
-- No direct Hugging Face dataset/trainer integration.
-- No automatic reference-policy KL handling in the repo.
-- No built-in LoRA/full-finetuning launch path.
-
-Mitigation:
-
-- Keep `trl_grpo_pilot.toml` as the pilot configuration.
-- Export prompt/completion/reward samples from `RolloutRecord`.
-- Add a small TRL adapter only after Harbor integration is working.
-
-### Capabilities Compromised By Not Using verl In Core
-
-- No distributed actor/critic/reference worker orchestration.
-- No vLLM/SGLang rollout worker integration.
-- No cluster-scale checkpointing.
-- No Ray-based launch script.
-
-Mitigation:
-
-- Keep `verl_grpo_large_scale.toml` as the large-scale target.
-- Preserve backend-neutral rollout schema.
-- Add verl only in the training image, not the environment package.
-
-## Spring-To-Training Plan
-
-### Stage 1: Real Harbor Adapter
-
-Implement `HarborTerminalBenchEnv` with the same interface as
-`MockTerminalBenchEnv`.
-
-Required behavior:
-
-- launch a selected Terminal-Bench task,
-- expose task instruction and workspace summary,
-- execute one action per step,
-- collect stdout/stderr and file summaries,
-- run public progress checks when allowed,
-- run final verifier only at episode termination,
-- block hidden-test/oracle leakage,
-- write `RolloutRecord` rows.
-
-Exit criterion:
+The correct future integration is online:
 
 ```text
-A scripted policy can solve one toy or easy Terminal-Bench task through Harbor,
-and the generated JSONL converts to training samples.
+prompt -> current policy samples G actions/trajectories -> Harbor scores them
+       -> TRL computes logprobs and group advantages -> policy update
 ```
 
-### Stage 2: Rollout Collection
+### verl
 
-Attach a frozen instruct model as the policy.
+Status: scale-up discussion only.
 
-Collect:
+verl should not be a laptop requirement. It is appropriate when moving from a
+single-machine pilot to distributed actor/reference/rollout workers.
 
-- 8 samples per prompt for GRPO group comparison,
-- task-family-stratified rollouts,
-- terminal and non-terminal step records,
-- failure taxonomy labels,
-- reward component histograms.
+Required future resources:
 
-Exit criterion:
+- GPU cluster,
+- Ray/Slurm/Kubernetes launcher,
+- vLLM/SGLang rollout serving,
+- checkpoint store,
+- rollout data store,
+- evaluation scheduler.
+
+## Readiness Commands
+
+Local checks:
+
+```bash
+python3 -m pytest
+python3 examples/run_mock_rollout.py
+python3 scripts/export_mock_samples.py
+python3 examples/check_training_readiness.py
+```
+
+Harbor command dry-run:
+
+```bash
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert
+```
+
+Harbor command execution, if Docker and `uvx`/Harbor are installed:
+
+```bash
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert --execute
+```
+
+## What "Ready For Training" Means Here
+
+Ready:
+
+- task/runtime choice is clear,
+- laptop-feasible Harbor oracle path is documented,
+- RLVR action/observation/reward schema exists,
+- rollout records are serializable,
+- trainer-neutral sample export works on toy data,
+- online GRPO handoff is specified.
+
+Not ready by design:
+
+- no LLM policy rollout without API/local model access,
+- no GRPO update without GPU,
+- no distributed verl run without cluster infrastructure.
+
+## Verdict
+
+The repo is ready as an environment-design take-home if it is described
+accurately:
 
 ```text
-At least 50-100 low-cost rollouts exist across multiple task families,
-and reward distributions are sane.
+Harbor validates real Terminal-Bench task execution.
+Mock tests validate the RLVR interface.
+Docs define the exact data lifecycle and training handoff.
+Actual policy rollout and GRPO training are resource-dependent next steps.
 ```
-
-### Stage 3: TRL Pilot
-
-Run a small GRPO experiment with Qwen2.5-Coder-7B-Instruct.
-
-Purpose:
-
-- validate reward scale,
-- validate action protocol,
-- test KL range,
-- find reward hacking modes,
-- test curriculum order.
-
-This stage is for correctness, not final performance.
-
-### Stage 4: verl Scale-Up
-
-Move to distributed training after the pilot passes.
-
-Required additions:
-
-- Ray or Slurm launcher,
-- model sharding strategy,
-- vLLM or SGLang rollout workers,
-- object-store backed rollout data,
-- checkpoint retention policy,
-- evaluation jobs on held-out task families.
-
-Exit criterion:
-
-```text
-The only changes from pilot to scale are backend, launch, and throughput
-configuration. Reward and environment semantics remain unchanged.
-```
-
-## Readiness Verdict
-
-The repo is ready as a take-home submission and as a pre-training environment
-package. It is not yet a training repo. The remaining work is operational:
-install Harbor, implement the concrete Harbor adapter, run a small rollout
-collection, then choose TRL for pilot or verl for scale.
-
-That is the intended boundary. Environment design, reward decomposition,
-logging, and trainer handoff are already represented in code.

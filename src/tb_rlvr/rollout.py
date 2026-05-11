@@ -27,11 +27,11 @@ class RolloutRecord:
         return json.dumps(asdict(self), sort_keys=True)
 
     def to_training_sample(self) -> dict[str, object]:
-        """Return a backend-neutral GRPO/PPO sample row.
+        """Return a backend-neutral prompt/completion/reward sample row.
 
-        TRL and verl use different concrete dataset loaders, but both need the
-        same logical fields: prompt, sampled completion/action, scalar reward,
-        and metadata for slicing failures.
+        This is directly useful for audit, SFT, DPO-style preference creation,
+        and offline analysis. Online GRPO still needs live policy sampling and
+        current-policy logprobs from the trainer.
         """
 
         if not self.observation_prompt:

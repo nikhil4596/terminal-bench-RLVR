@@ -1,0 +1,3 @@
+# Optional laptop smoke dependency.
+# Harbor can also be run with `uvx harbor ...` without installing it here.
+harbor

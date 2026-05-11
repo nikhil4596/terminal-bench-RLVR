@@ -15,12 +15,16 @@ Build an RLVR environment for Terminal-Bench 2.0 where:
 - exports trainer-neutral prompt/action/reward samples,
 - can later be connected to TRL for a pilot or verl for large-scale GRPO.
 
-The current repo implements the mock version of this contract and the training
-handoff shape. The next implementation step is the Harbor adapter.
+The current repo implements the RLVR contract, a mock unit-test environment,
+Harbor oracle command tooling, and the training handoff shape. The mock is not
+the proposed benchmark runtime; it is a fast fixture for testing the contract.
+Harbor is the real Terminal-Bench runtime.
 
 ## Non-Goals
 
 - No model fine-tuning in this repo.
+- No local LLM policy rollout without API or local model access.
+- No claim that JSONL alone is sufficient for online GRPO.
 - No leaderboard claim.
 - No hidden-test leakage.
 - No benchmark-specific solution memorization.
@@ -38,9 +42,11 @@ Policy model
   -> stdout/stderr/filesystem summary
   -> reward components
   -> rollout record
-  -> trainer-neutral export
-  -> TRL pilot or verl large-scale GRPO
+  -> audit/SFT/DPO export, or live online-GRPO handoff
+  -> future TRL pilot or verl large-scale GRPO
 ```
+
+See `docs/data_lifecycle.md` for sample-level walkthroughs.
 
 ## Current Repo Components
 
@@ -142,10 +148,56 @@ Acceptance criteria:
 - integrity violation terminates with negative reward,
 - max-step timeout terminates without success.
 
-## Phase 1: Harbor Adapter
+### Harbor Oracle Smoke
 
-Implement `HarborTerminalBenchEnv` behind the same interface as
-`MockTerminalBenchEnv`.
+Files: `src/tb_rlvr/harbor.py`, `scripts/harbor_oracle_smoke.py`
+
+Responsibilities:
+
+- construct the exact Harbor command for a Terminal-Bench oracle run,
+- support dry-run mode with no Docker/Harbor dependency,
+- execute the command when the user passes `--execute` and has Docker/uvx/Harbor.
+
+Acceptance criteria:
+
+- dry-run prints a command like
+  `uvx harbor run -d terminal-bench@2.0 -t openssl-selfsigned-cert -a oracle`;
+- no LLM, API key, or GPU is required for oracle validation;
+- the command path is tested without launching Docker.
+
+## Phase 1: Laptop-Feasible Runtime Validation
+
+Validate the real Terminal-Bench runtime with Harbor oracle and validate the
+RLVR contract with local tests.
+
+### Commands
+
+```bash
+python3 -m pytest
+python3 examples/run_mock_rollout.py
+python3 scripts/export_mock_samples.py
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert
+```
+
+If Docker and Harbor/uvx are available:
+
+```bash
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert --execute
+```
+
+### Phase 1 Exit Criteria
+
+- all unit tests pass,
+- mock rollout emits a successful `RolloutRecord`,
+- sample export writes prompt/completion/reward rows,
+- Harbor oracle command is reproducible,
+- optional real oracle run verifies one Terminal-Bench task.
+
+## Phase 2: Harbor Policy Adapter
+
+Implement `HarborTerminalBenchEnv` behind the same conceptual interface as
+`MockTerminalBenchEnv`. This is the first step that requires a real interactive
+agent/runtime integration rather than an oracle reference solution.
 
 ### Required Interface
 
@@ -183,16 +235,17 @@ class HarborTerminalBenchEnv:
 - network should be disabled unless the task explicitly requires it;
 - timeouts must be deterministic and recorded.
 
-### Phase 1 Exit Criteria
+### Phase 2 Exit Criteria
 
 - one scripted policy can solve one known easy task through Harbor;
 - one failing scripted policy emits a clean failure rollout;
 - rollout JSONL converts to training samples;
 - tests cover reset, step, timeout, safety violation, and final success.
 
-## Phase 2: Rollout Collection
+## Phase 3: Policy Rollout Collection
 
-Attach a frozen policy model and collect trajectories without training.
+Attach a frozen policy model and collect trajectories without training. This
+requires either API model access or a local model server. It is not laptop-free.
 
 ### Policy Interface
 
@@ -226,7 +279,7 @@ max_completion_tokens: 2048
 - stdout/stderr snippets,
 - failure taxonomy labels when reviewed.
 
-### Phase 2 Exit Criteria
+### Phase 3 Exit Criteria
 
 - at least 50-100 complete rollouts;
 - reward component histograms look sane;
@@ -234,9 +287,11 @@ max_completion_tokens: 2048
 - progress reward correlates with final success;
 - there are enough successful and failed examples for GRPO grouping.
 
-## Phase 3: TRL GRPO Pilot
+## Phase 4: TRL GRPO Pilot
 
-Use TRL for a small research pilot after Harbor rollouts are valid.
+Use TRL for a small research pilot after Harbor policy rollouts are valid. This
+requires GPU compute because the trainer must sample from the current policy,
+compute token logprobs, compute group-relative advantages, and update weights.
 
 ### Purpose
 
@@ -262,7 +317,7 @@ temperature: 0.7
 top_p: 0.95
 ```
 
-### Phase 3 Exit Criteria
+### Phase 4 Exit Criteria
 
 - loss and KL are stable;
 - integrity violations do not increase;
@@ -271,7 +326,7 @@ top_p: 0.95
 - reward improvements are not explained only by shorter completions or public
   probe exploitation.
 
-## Phase 4: verl Large-Scale Training
+## Phase 5: verl Large-Scale Training
 
 Move to verl only after the TRL pilot validates the reward/environment design.
 
@@ -295,7 +350,7 @@ semantics.
 
 See `configs/training/verl_grpo_large_scale.toml`.
 
-### Phase 4 Exit Criteria
+### Phase 5 Exit Criteria
 
 - distributed workers can collect rollouts and train from the same schema;
 - checkpoints are reproducible;
@@ -364,31 +419,34 @@ Ready now:
 - rollout schema,
 - training-sample export,
 - mock environment,
+- Harbor oracle command dry-run,
+- data lifecycle documentation,
 - config skeletons,
 - tests,
 - submission write-up.
 
 External or future:
 
-- Harbor runtime installation,
+- Harbor runtime execution if Docker/uvx/Harbor are unavailable locally,
 - real Terminal-Bench adapter,
-- frozen model rollout collector,
-- TRL launch script,
-- verl launch script,
+- frozen model/API rollout collector,
+- GPU-backed TRL launch script,
+- verl scale-up launch script,
 - cluster deployment,
 - actual RL training.
 
 ## Implementation Order
 
 1. Keep the current tests passing.
-2. Add `HarborTerminalBenchEnv`.
-3. Add one Harbor smoke fixture.
+2. Run or dry-run Harbor oracle smoke.
+3. Add `HarborTerminalBenchEnv`.
 4. Add one scripted policy integration test.
-5. Generate rollout JSONL from a frozen model.
+5. Generate rollout JSONL from a frozen model or API policy.
 6. Review reward distributions.
-7. Add TRL GRPO pilot script.
+7. Add GPU-backed TRL GRPO pilot script.
 8. Move to verl only after the pilot validates reward and action semantics.
 
-The final training job should not require redesigning the package. It should
-only require replacing the mock environment with Harbor execution and attaching
-the chosen trainer backend.
+The final training job should not require redesigning the action, observation,
+reward, safety, or rollout contract. It should require a real Harbor policy
+adapter, model access, and a trainer backend that calls this environment while
+sampling from the current policy.

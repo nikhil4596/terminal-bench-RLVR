@@ -11,9 +11,10 @@ verification, progress probes, safety checks, and efficiency penalties.
 The implementation package stops before model training, as requested. It
 provides the environment interface, action protocol, observation format, reward
 schema, safety checks, rollout record format, trainer-neutral export path,
-configuration skeletons, tests, and a training-readiness audit. With compute
-and a Harbor runtime available, the remaining work is to run rollouts and
-connect those records to a GRPO trainer.
+configuration skeletons, tests, Harbor oracle smoke tooling, and a
+training-readiness audit. On a laptop, the package can validate local contracts
+and dry-run or execute a Harbor oracle task if Docker and Harbor are available.
+Real LLM policy rollouts and GRPO updates require model access and GPU compute.
 
 Selected stack:
 
@@ -24,9 +25,10 @@ Selected stack:
 - Base model: Qwen2.5-Coder-7B-Instruct.
 - RL algorithm: GRPO.
 
-The central design choice is to keep the environment independent from the
-trainer. Harbor owns task execution. The repo owns state/action/reward/logging.
-TRL or verl consumes exported rollouts for training.
+The central design choice is to keep the task runtime, RLVR interface, and
+trainer separate. Harbor owns Terminal-Bench task execution and verification.
+This repo owns state/action/reward/logging. TRL or verl would later call this
+environment while sampling from a current policy during training.
 
 ## Assignment Scope
 
@@ -79,6 +81,13 @@ Terminal-Bench provides:
 - natural long-horizon interaction,
 - measurable success/failure outcomes.
 
+Terminal-Bench is not a simple table of one-shot prompts. It is a suite of
+stateful task environments. Each task has one initial instruction, but a model
+rollout creates a new observation prompt after every command, patch, or finish
+action. Training scale comes from many steps per trajectory, many sampled
+trajectories per task, and eventually synthetic/private Terminal-Bench-style
+tasks rather than from treating the public benchmark as a large prompt corpus.
+
 This creates an MDP/POMDP-like training loop:
 
 ```text
@@ -130,10 +139,9 @@ distributed launch. The missing pieces are cluster specific.
 
 The main compromise is explicit:
 
-- without TRL in core, the repo cannot immediately call a local `GRPOTrainer`;
-- without verl in core, the repo cannot launch distributed training;
-- without Harbor installed locally, the repo cannot yet run real
-  Terminal-Bench tasks.
+- without model access, the repo cannot collect real LLM policy rollouts;
+- without GPU compute, the repo cannot run GRPO updates;
+- without Docker/Harbor locally, the repo can only dry-run Harbor commands.
 
 The benefit is also explicit:
 
@@ -320,7 +328,8 @@ This is sufficient for:
 - failure analysis,
 - trajectory replay,
 - reward debugging,
-- GRPO/PPO dataset conversion.
+- SFT/DPO-style dataset conversion,
+- future online GRPO environment integration.
 
 The trainer-neutral sample format is:
 
@@ -330,6 +339,11 @@ completion: sampled model action
 reward: scalar reward
 metadata: task id, step, terminal reason, reward components, hashes
 ```
+
+For online GRPO, JSONL alone is not sufficient unless it also contains current
+policy logprobs. A real GRPO loop must sample from the current policy, execute
+candidate actions or trajectories in the Harbor-backed environment, compute
+rewards, compute token logprobs, and then update the policy.
 
 ## Model Choice
 
@@ -537,6 +551,8 @@ permissions, filesystem mounts, network isolation, and verifier separation.
 ### Local Prototype
 
 Use the mock environment and unit tests to verify schema and reward behavior.
+Use the Harbor oracle smoke script to validate real Terminal-Bench task runtime
+when Docker and Harbor are available.
 
 ### Harbor Integration
 
@@ -572,10 +588,12 @@ The implemented package contains:
 - `src/tb_rlvr/rewards.py`: reward components and scalar combination.
 - `src/tb_rlvr/safety.py`: local safety checks.
 - `src/tb_rlvr/rollout.py`: rollout JSONL and training-sample export.
+- `src/tb_rlvr/harbor.py`: Harbor oracle command construction and dry-run.
 - `src/tb_rlvr/env.py`: mock Terminal-Bench-style environment.
 - `src/tb_rlvr/trainers/export.py`: backend-neutral trainer export.
 - `src/tb_rlvr/readiness.py`: training-readiness reporting.
 - `configs/training/`: Harbor, TRL, and verl configuration skeletons.
+- `docs/data_lifecycle.md`: concrete task-to-rollout-to-trainer examples.
 - `tests/`: fast local validation suite.
 
 ## Validation
@@ -585,45 +603,59 @@ The local validation commands are:
 ```bash
 python3 -m pytest
 python3 examples/run_mock_rollout.py
+python3 scripts/export_mock_samples.py
 python3 examples/check_training_readiness.py
+python3 scripts/harbor_oracle_smoke.py --task openssl-selfsigned-cert
 ```
 
 Expected state:
 
 - tests pass,
 - mock rollout emits a successful JSONL record,
-- readiness report marks core repo files ready and external training packages
-  as intentionally not installed.
+- mock samples export in the trainer-neutral format,
+- Harbor oracle command dry-runs without requiring Docker/GPU/API access,
+- readiness report separates laptop-feasible validation from resource-dependent
+  policy rollout and training.
 
-## Known Limitations
+## Execution Boundary
 
-This repo does not yet:
+This repo intentionally does not:
 
-- install or run Harbor,
-- execute real Terminal-Bench tasks,
-- run TRL GRPO,
-- run verl distributed training,
+- run an LLM policy rollout without API or local model access,
+- compute live policy logprobs,
+- run GRPO updates without GPU compute,
+- run distributed verl training,
 - fine-tune any model,
 - claim benchmark improvement.
 
-These are outside the no-training deliverable. The design keeps them as
-straight-line follow-up work rather than unresolved environment questions.
+This repo does provide:
+
+- Harbor oracle command construction and dry-run execution,
+- a laptop-feasible path to run a real oracle task if Docker/Harbor are present,
+- tested RLVR observation/action/reward/rollout contracts,
+- trainer-neutral sample export for audit/SFT/DPO-style use,
+- a precise data lifecycle for future online GRPO.
+
+That boundary is intentional. The deliverable is an environment-design package,
+not an expensive model-training run.
 
 ## Next Implementation Steps
 
-1. Implement `HarborTerminalBenchEnv` behind the current `reset/step` contract.
-2. Run one real Terminal-Bench smoke task with a scripted policy.
-3. Generate 50-100 pilot rollouts with a frozen model.
+1. Execute the Harbor oracle smoke task on a Docker-capable machine.
+2. Implement a real `HarborTerminalBenchEnv` adapter for policy actions.
+3. Attach an API or local model policy and collect a small rollout set.
 4. Review reward component distributions and failure cases.
-5. Launch a small TRL GRPO pilot.
+5. Launch a GPU-backed TRL GRPO pilot.
 6. Move to verl only after the reward and action protocol are stable.
 
 ## References
 
-- Terminal-Bench project and task harness documentation:
-  https://github.com/laude-institute/terminal-bench
-- Harbor project documentation:
-  https://github.com/laude-institute/harbor
+- Terminal-Bench 2.0 Harbor registry:
+  https://www.harborframework.com/registry/terminal-bench/2.0
+- Harbor Terminal-Bench running documentation:
+  https://harborframework.com/docs/running-tbench
+- Public Terminal-Bench 2 task repository:
+  https://github.com/harbor-framework/terminal-bench-2
 - TRL GRPO documentation:
   https://huggingface.co/docs/trl/main/en/grpo_trainer
 - verl documentation:

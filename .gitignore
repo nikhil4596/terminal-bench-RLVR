@@ -5,3 +5,6 @@ __pycache__/
 # Personal prep notes and source assignment material.
 research_notes/
 *.pdf
+
+# Local run artifacts.
+outputs/

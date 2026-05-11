@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,9 +48,10 @@ def evaluate_training_readiness(root: Path | str | None = None) -> ReadinessRepo
                 "src/tb_rlvr/actions.py",
                 "src/tb_rlvr/observations.py",
                 "src/tb_rlvr/env.py",
+                "src/tb_rlvr/harbor.py",
                 "src/tb_rlvr/safety.py",
             ],
-            "Keep Harbor adapter behind this interface.",
+            "Keep Harbor runtime execution behind this interface.",
         ),
         _files_item(
             repo_root,
@@ -78,30 +80,46 @@ def evaluate_training_readiness(root: Path | str | None = None) -> ReadinessRepo
                 "README.md",
                 "docs/submission_writeup.md",
                 "docs/implementation_plan.md",
+                "docs/data_lifecycle.md",
                 "docs/training_readiness.md",
             ],
             "Keep exploratory research notes outside the submission docs.",
         ),
-        _dependency_item(
-            "Harbor package",
-            ("harbor",),
-            "Install Harbor in the training image before real Terminal-Bench rollouts.",
+        _files_item(
+            repo_root,
+            "Laptop execution scripts",
+            [
+                "scripts/harbor_oracle_smoke.py",
+                "scripts/export_mock_samples.py",
+                "examples/run_mock_rollout.py",
+            ],
+            "Use dry-run scripts locally; execute Harbor only when Docker/uvx are available.",
+        ),
+        _cli_item(
+            "Harbor CLI runner",
+            ("uvx", "harbor"),
+            "Install uv or Harbor before running real oracle smoke tasks.",
         ),
         _dependency_item(
             "TRL package",
             ("trl",),
-            "Install only for the single-node or small-cluster GRPO pilot.",
+            "Install only when moving to GPU-backed online GRPO pilot training.",
+        ),
+        _dependency_item(
+            "Transformers package",
+            ("transformers",),
+            "Install with TRL when model policy sampling/logprobs are needed.",
         ),
         _dependency_item(
             "verl package",
             ("verl",),
-            "Install only in the large-scale CUDA/Ray training image.",
+            "Install only in a large-scale CUDA/Ray training image.",
         ),
         ReadinessItem(
-            area="Distributed infrastructure",
+            area="Local LLM/GPU training resources",
             status="external",
-            detail="No GPU cluster, Ray runtime, object store, or checkpoint volume is configured locally.",
-            next_action="Attach Slurm/Kubernetes/Ray launch files once the target cluster is known.",
+            detail="No local GPU, policy server, or API credentials are assumed by this repo.",
+            next_action="Use Harbor oracle for runtime validation; add model access only for real policy rollouts.",
         ),
     ]
     return ReadinessReport(tuple(items))
@@ -140,6 +158,23 @@ def _dependency_item(
     return ReadinessItem(
         area=area,
         status="external",
-        detail="Not installed locally; this is expected for the no-training repo.",
+        detail="Not installed locally; not required for laptop no-training validation.",
+        next_action=next_action,
+    )
+
+
+def _cli_item(area: str, commands: tuple[str, ...], next_action: str) -> ReadinessItem:
+    available = [command for command in commands if shutil.which(command)]
+    if available:
+        return ReadinessItem(
+            area=area,
+            status="available",
+            detail="Available command(s): " + ", ".join(available),
+            next_action="Run scripts/harbor_oracle_smoke.py --execute when Docker is running.",
+        )
+    return ReadinessItem(
+        area=area,
+        status="external",
+        detail="No Harbor runner found on PATH.",
         next_action=next_action,
     )

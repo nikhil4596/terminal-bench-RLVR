@@ -2,7 +2,9 @@
 name = "trl"
 role = "single-node-or-small-cluster-pilot"
 selected_for_large_scale = false
-reason = "Fastest path to validate reward functions and GRPO hyperparameters before distributed training."
+reason = "Fastest path to validate reward functions and GRPO hyperparameters once Harbor policy rollouts and GPU resources exist."
+requires_gpu = true
+requires_live_policy_sampling = true
 
 [model]
 base_model = "Qwen/Qwen2.5-Coder-7B-Instruct"
@@ -20,9 +22,10 @@ temperature = 0.7
 top_p = 0.95
 
 [data]
-train_source = "harbor_rollout_jsonl"
+train_source = "online_harbor_environment_rollouts"
 curriculum = "smoke_easy_medium_hard"
 holdout_fraction = 0.2
+note = "Offline JSONL is useful for audit/SFT/DPO; online GRPO needs current policy samples and logprobs."
 
 [rewards]
 success_weight = 1.0

@@ -1,0 +1,6 @@
+# Optional future pilot-training dependencies.
+# These are not required for local no-GPU validation.
+trl
+transformers
+datasets
+accelerate

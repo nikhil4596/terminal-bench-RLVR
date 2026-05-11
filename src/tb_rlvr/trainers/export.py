@@ -5,10 +5,18 @@ from collections.abc import Iterable
 from ..rollout import RolloutRecord
 
 
-def records_to_grpo_samples(records: Iterable[RolloutRecord]) -> list[dict[str, object]]:
-    """Convert rollout records to backend-neutral GRPO/PPO sample rows."""
+def records_to_training_samples(
+    records: Iterable[RolloutRecord],
+) -> list[dict[str, object]]:
+    """Convert rollout records to backend-neutral sample rows."""
 
     return [record.to_training_sample() for record in records]
+
+
+def records_to_grpo_samples(records: Iterable[RolloutRecord]) -> list[dict[str, object]]:
+    """Backward-compatible alias for older docs/tests."""
+
+    return records_to_training_samples(records)
 
 
 def terminal_records(records: Iterable[RolloutRecord]) -> list[RolloutRecord]:

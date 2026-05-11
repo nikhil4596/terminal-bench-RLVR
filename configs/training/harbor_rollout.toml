@@ -4,8 +4,16 @@ harness = "harbor"
 execution = "docker_or_remote_provider"
 max_steps_per_episode = 30
 max_wall_time_seconds = 3600
-n_concurrent_local = 4
+n_concurrent_local = 1
 n_concurrent_cloud = 256
+
+[oracle_smoke]
+dataset = "terminal-bench@2.0"
+task_id = "openssl-selfsigned-cert"
+agent = "oracle"
+runner = "uvx harbor"
+requires_gpu = false
+requires_llm_api = false
 
 [rollout]
 action_protocol = "single_action_xml"
@@ -15,6 +23,7 @@ store_model_output = true
 store_reward_components = true
 store_terminal_reason = true
 redact_oracle_and_hidden_tests = true
+online_grpo_requires_live_policy_logprobs = true
 
 [safety]
 forbid_test_mutation = true
