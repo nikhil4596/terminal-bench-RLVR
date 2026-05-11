@@ -1,3 +1,6 @@
 # Optional laptop smoke dependency.
-# Harbor can also be run with `uvx harbor ...` without installing it here.
-harbor
+# Harbor currently requires Python >=3.12. It can also be installed as a uv tool:
+#   uv tool install harbor
+# Or run without a persistent install:
+#   uvx harbor run -d terminal-bench@2.0 -a oracle
+harbor; python_version >= "3.12"

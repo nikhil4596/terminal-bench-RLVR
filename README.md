@@ -80,7 +80,7 @@ conda env create -f environment.yml
 conda activate tb-rlvr
 ```
 
-Or with an existing Python 3.11 environment:
+Or with an existing Python 3.11+ environment for local package checks:
 
 ```bash
 pip install -e .
@@ -121,6 +121,15 @@ For code review:
 
 Oracle means Harbor runs the task's reference solution. It is not an LLM and
 does not need a GPU or API key.
+
+Harbor itself currently requires Python 3.12+. The easiest install path is:
+
+```bash
+uv tool install harbor
+```
+
+The script defaults to `uvx harbor ...`, so a persistent Harbor install is not
+required if `uvx` can resolve and run the package.
 
 Dry-run the command:
 
