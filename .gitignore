@@ -2,8 +2,7 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 
-# Personal prep notes and source assignment material.
-research_notes/
+# Source assignment material.
 *.pdf
 
 # Local run artifacts.
