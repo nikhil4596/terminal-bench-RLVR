@@ -1,0 +1,34 @@
+[backend]
+name = "skyrl-agent"
+role = "primary-open-source-rl-framework"
+reason = "SkyRL-Agent is designed for multi-turn long-horizon agent RL and Harbor documents SkyRL integration for Harbor task rollouts."
+
+[model]
+base_model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+dtype = "bfloat16"
+max_context_tokens = 32768
+max_output_tokens = 4096
+lora_rank = 32
+
+[algorithm]
+name = "GRPO"
+group_size = 16
+learning_rate = 0.000001
+kl_coefficient = 0.02
+optimizer = "AdamW"
+max_grad_norm = 1.0
+temperature = 0.7
+top_p = 0.95
+max_turns = 20
+
+[data]
+sft_source = "successful_synthetic_harbor_atif_traces"
+rl_source = "synthetic_harbor_tasks_with_10_to_80_percent_sft_solve_rate"
+terminal_bench_2_usage = "held_out_evaluation_only"
+split_strategy = "by_generator_seed_and_skill_family"
+
+[rewards]
+correctness_weight = 0.80
+efficiency_weight = 0.20
+integrity_penalty = -1.0
+correctness_source = "/logs/verifier/reward.json"

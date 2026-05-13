@@ -1,0 +1,1 @@
+Analyze `/app/input/events.log` and create `/app/report.json`. The JSON object must contain `total_events`, `error_count`, `warning_count`, and `error_services`. `error_services` must map each service name with at least one ERROR event to its count. Do not modify the input log.

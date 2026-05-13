@@ -1,7 +1,7 @@
 [project]
-name = "terminalbench-rlvr-environment"
+name = "synthetic-harbor-rlvr-environment"
 version = "0.1.0"
-description = "No-training RLVR environment prototype for Terminal-Bench-style tasks"
+description = "No-training synthetic Harbor RLVR environment prototype for Terminal-Bench 2.0 transfer"
 requires-python = ">=3.10"
 dependencies = []
 

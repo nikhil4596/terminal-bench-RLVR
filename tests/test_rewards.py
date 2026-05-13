@@ -1,34 +1,44 @@
-from tb_rlvr.rewards import combine_rewards
+from tb_rlvr.contracts.rewards import combine_rewards, reward_from_verifier
 
 
-def test_success_reward_dominates_progress() -> None:
+def test_correctness_dominates_reward() -> None:
     reward = combine_rewards(
-        success=True,
-        progress_delta=0.0,
+        correctness=1.0,
         integrity_violation=False,
-        step_count=5,
+        turn_count=5,
+        max_turns=20,
     )
-    assert reward.success == 1.0
+    assert reward.correctness == 1.0
     assert reward.total > 0.9
+    assert reward.success == 1.0
 
 
-def test_progress_reward_is_capped() -> None:
+def test_efficiency_is_correctness_gated() -> None:
     reward = combine_rewards(
-        success=False,
-        progress_delta=10.0,
+        correctness=0.0,
         integrity_violation=False,
-        step_count=0,
+        turn_count=1,
+        max_turns=20,
     )
-    assert reward.progress == 0.20
+    assert reward.efficiency == 0.0
+    assert reward.total == 0.0
 
 
 def test_integrity_violation_is_negative() -> None:
     reward = combine_rewards(
-        success=False,
-        progress_delta=0.20,
+        correctness=1.0,
         integrity_violation=True,
-        step_count=1,
+        turn_count=1,
+        max_turns=20,
     )
     assert reward.integrity == -1.0
     assert reward.total < 0
 
+
+def test_reward_from_verifier_uses_correctness() -> None:
+    reward = reward_from_verifier(
+        {"correctness": 0.5, "reward": 0.1},
+        integrity_violation=False,
+        turn_count=10,
+    )
+    assert reward.correctness == 0.5

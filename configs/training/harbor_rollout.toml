@@ -1,32 +1,35 @@
 [environment]
-benchmark = "terminal-bench@2.0"
+benchmark_target = "terminal-bench@2.0"
+benchmark_role = "held_out_final_eval_only"
+training_task_source = "local_synthetic_harbor_tasks"
+training_tasks_path = "tasks/synthetic-*"
 harness = "harbor"
-execution = "docker_or_remote_provider"
-max_steps_per_episode = 30
+agent = "terminus-2-compatible"
+execution = "docker_or_cloud_sandbox"
+max_turns_per_episode = 20
 max_wall_time_seconds = 3600
-n_concurrent_local = 1
-n_concurrent_cloud = 256
-
-[oracle_smoke]
-dataset = "terminal-bench@2.0"
-task_id = "openssl-selfsigned-cert"
-agent = "oracle"
-runner = "uvx harbor"
-requires_gpu = false
-requires_llm_api = false
+n_concurrent_local = 4
+n_concurrent_cloud = 128
 
 [rollout]
-action_protocol = "single_action_xml"
-record_format = "jsonl"
-store_observation_prompt = true
-store_model_output = true
+trajectory_format = "ATIF"
+record_tokens = true
+record_masks = true
+record_logprobs = true
+store_verifier_rewards = true
 store_reward_components = true
 store_terminal_reason = true
-redact_oracle_and_hidden_tests = true
-online_grpo_requires_live_policy_logprobs = true
+redact_oracle_and_tests = true
 
 [safety]
-forbid_test_mutation = true
-forbid_oracle_access = true
+forbid_test_access = true
+forbid_solution_access = true
+forbid_verifier_tampering = true
 forbid_network_by_default = true
 terminate_on_integrity_violation = true
+
+[validation]
+oracle_must_pass = true
+dummy_agent_must_fail = true
+reward_file = "/logs/verifier/reward.json"
+decontaminate_against_terminal_bench_2 = true
